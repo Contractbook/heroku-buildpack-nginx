@@ -14,6 +14,7 @@ http {
 	gzip_min_length 512;
 	gzip_proxied any; # Heroku router sends Via header
 
+	mirror http;
 	server_tokens off;
 
 	log_format l2met 'measure#nginx.service=$request_time request_id=$http_x_request_id';
@@ -41,11 +42,30 @@ http {
 			# if ($http_x_forwarded_proto != "https") {
 			#   return 301 https://$host$request_uri;
 			# }
+			<% if ENV['NGINX_MIRROR_TRAFFIC_TO'] %>
+			mirror /mirror;
+			<% end %>
 
 			proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 			proxy_set_header Host $http_host;
 			proxy_redirect off;
 			proxy_pass http://app_server;
+
+			# Preflighted requests
+			if ($request_method = OPTIONS) {
+				add_header "Access-Control-Allow-Origin" "*";
+				add_header "Access-Control-Allow-Methods" "GET, POST, OPTIONS, HEAD, PATCH";
+				add_header "Access-Control-Allow-Headers" "Authorization, Origin, X-Requested-With, Content-Type, Accept";
+				return 200;
+			}
 		}
+
+		<% if ENV['NGINX_MIRROR_TRAFFIC_TO'] %>
+		location = /mirror {
+			internal;
+			resolver 8.8.8.8;
+			proxy_pass https://<%= ENV['NGINX_MIRROR_TRAFFIC_TO'] %>$request_uri;
+		}
+		<% end %>
 	}
 }
